@@ -56,17 +56,38 @@ async def setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'فرمت صحیح:\n'
             '/setup <کلمه_کلیدی> <کشور> <زبان> <فاصله_زمانی_دقیقه>\n\n'
             'مثال:\n'
-            '/setup "ki video erstellen" de de 5\n\n'
-            'یعنی هر 5 دقیقه برای کلمه "ki video erstellen" در کشور آلمان (de) و زبان آلمانی (de) جستجو کند.'
+            '/setup ki video erstellen de de 5\n\n'
+            'یعنی هر 5 دقیقه برای کلمه "ki video erstellen" در کشور آلمان (de) و زبان آلمانی (de) جستجو کند.\n\n'
+            '⚠️ توجه: کلمه کلیدی می‌تواند چند کلمه باشد (بدون کوتیشن)'
         )
         return
     
     try:
-        # Parse arguments
-        keyword = context.args[0].strip('"\'')
-        country = context.args[1].lower()
-        language = context.args[2].lower()
-        interval = int(context.args[3])
+        # Parse arguments - keyword can be multiple words
+        # Last 3 args are: country, language, interval
+        # Everything before that is the keyword
+        if len(context.args) >= 4:
+            # Get interval (last argument)
+            try:
+                interval = int(context.args[-1])
+            except ValueError:
+                await update.message.reply_text('❌ فاصله زمانی باید یک عدد باشد!')
+                return
+            
+            # Get country and language (second and third from last)
+            country = context.args[-3].lower().strip('"\'')
+            language = context.args[-2].lower().strip('"\'')
+            
+            # Everything else is the keyword
+            keyword_parts = context.args[:-3]
+            keyword = ' '.join(keyword_parts).strip('"\'')
+        else:
+            await update.message.reply_text(
+                '❌ فرمت دستور اشتباه است!\n\n'
+                'فرمت صحیح:\n'
+                '/setup <کلمه_کلیدی> <کشور> <زبان> <فاصله_زمانی_دقیقه>'
+            )
+            return
         
         if interval < 1:
             await update.message.reply_text('❌ فاصله زمانی باید حداقل 1 دقیقه باشد!')
