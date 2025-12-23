@@ -199,9 +199,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 data={'user_id': user_id}
             )
             logger.info(f"Recurring job scheduled: {job_name}")
-            logger.info(f"Job will run in: {scheduled_job.next_t} seconds")
-            logger.info(f"Job interval: {scheduled_job.interval} seconds")
-            logger.info(f"Job active: {scheduled_job.enabled}")
+            logger.info(f"Job will run every 5 minutes, first run in 5 minutes")
         except Exception as e:
             logger.error(f"Error scheduling job: {e}")
             await query.edit_message_text(f"❌ خطا در تنظیم کار تکراری: {str(e)}")
