@@ -145,15 +145,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         job_name = f"ads_job_{user_id}"
         job_queue = context.application.job_queue
         
-        # Ensure job_queue is started
+        # Initialize job_queue if None
         if job_queue is None:
-            logger.error("Job queue is None!")
-            await query.edit_message_text("❌ خطا: Job queue در دسترس نیست!")
-            return
+            logger.warning("Job queue is None, initializing...")
+            from telegram.ext import JobQueue
+            job_queue = JobQueue()
+            job_queue.set_application(context.application)
+            context.application.job_queue = job_queue
+            job_queue.start()
+            logger.info("Job queue initialized and started")
         
         # Start job_queue if not already started
         try:
-            if not hasattr(job_queue, '_running') or not job_queue._running:
+            if not job_queue._running:
                 job_queue.start()
                 logger.info("Job queue started")
         except Exception as e:
@@ -458,7 +462,16 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Start the bot."""
+    from telegram.ext import JobQueue
+    
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    
+    # Initialize job_queue if not already initialized
+    if application.job_queue is None:
+        job_queue = JobQueue()
+        job_queue.set_application(application)
+        application.job_queue = job_queue
+        logger.info("Job queue initialized")
     
     # Register handlers
     application.add_handler(CommandHandler("start", start))
