@@ -185,16 +185,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Error in immediate search: {e}")
         
-        # Create recurring job - start after 5 minutes
+        # Create recurring job - start after 5 minutes, then repeat every 5 minutes
         try:
-            job_queue.run_repeating(
+            scheduled_job = job_queue.run_repeating(
                 send_ads_list,
                 interval=5 * 60,  # 5 minutes in seconds
                 first=5 * 60,  # Start after 5 minutes (not immediately)
                 name=job_name,
                 data={'user_id': user_id}
             )
-            logger.info(f"Recurring job scheduled: {job_name}, first run in 5 minutes, then every 5 minutes")
+            logger.info(f"Recurring job scheduled: {job_name}")
+            logger.info(f"Job will run in: {scheduled_job.next_t} seconds")
+            logger.info(f"Job interval: {scheduled_job.interval} seconds")
+            logger.info(f"Job active: {scheduled_job.enabled}")
         except Exception as e:
             logger.error(f"Error scheduling job: {e}")
             await query.edit_message_text(f"❌ خطا در تنظیم کار تکراری: {str(e)}")
