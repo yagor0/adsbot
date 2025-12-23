@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 APP_TWEAK_API_KEY = os.getenv('APP_TWEAK_API_KEY', 'CGXefdBhfEpuAJQ-sIf8sEJmi18')
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8569195623:AAFrobmCrcnnLzrg-SzXGcRiIxXNzIEdlT4')
 ADMIN_ID = int(os.getenv('ADMIN_ID', '295984673'))
+CHANNEL_ID = os.getenv('CHANNEL_ID', '-1003626600006')  # Channel ID for sending messages
 
 APP_TWEAK_BASE_URL = 'https://public-api.apptweak.com/api/public/store/keywords/search-results/ads/current'
 
@@ -78,7 +79,7 @@ async def setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'language': language,
             'interval': interval,
             'active': True,
-            'chat_id': update.effective_chat.id
+            'chat_id': CHANNEL_ID  # Use channel ID instead of user chat
         }
         
         # Remove existing job if any
@@ -100,8 +101,10 @@ async def setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f'🔍 کلمه کلیدی: {keyword}\n'
             f'🌍 کشور: {country}\n'
             f'🗣️ زبان: {language}\n'
-            f'⏰ فاصله زمانی: هر {interval} دقیقه\n\n'
-            f'کار تکراری شروع شد! اولین نتیجه بعد از 10 ثانیه ارسال می‌شود.'
+            f'⏰ فاصله زمانی: هر {interval} دقیقه\n'
+            f'📢 چنل: ADS (ID: {CHANNEL_ID})\n\n'
+            f'کار تکراری شروع شد! پیام‌ها به چنل ارسال می‌شوند.\n'
+            f'اولین نتیجه بعد از 10 ثانیه ارسال می‌شود.'
         )
         
         logger.info(f"User {user_id} setup: keyword={keyword}, country={country}, language={language}, interval={interval}min")
@@ -214,11 +217,11 @@ async def send_ads_list(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in scheduled job for user {user_id}: {e}")
         try:
             await context.bot.send_message(
-                chat_id=chat_id,
+                chat_id=CHANNEL_ID,
                 text=f"❌ خطا در دریافت نتایج: {str(e)}"
             )
-        except:
-            pass
+        except Exception as send_error:
+            logger.error(f"Error sending error message to channel: {send_error}")
 
 async def search_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle keyword search and return first ad result."""
