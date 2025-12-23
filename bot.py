@@ -145,13 +145,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         job_name = f"ads_job_{user_id}"
         job_queue = context.application.job_queue
         
+        # Ensure job_queue is started
+        if job_queue is None:
+            logger.error("Job queue is None!")
+            await query.edit_message_text("❌ خطا: Job queue در دسترس نیست!")
+            return
+        
+        # Start job_queue if not already started
+        try:
+            if not hasattr(job_queue, '_running') or not job_queue._running:
+                job_queue.start()
+                logger.info("Job queue started")
+        except Exception as e:
+            logger.warning(f"Job queue start check: {e}")
+        
         # Remove existing job if any
         try:
             existing_jobs = job_queue.get_jobs_by_name(job_name)
             if existing_jobs:
+                logger.info(f"Removing existing job: {job_name}")
                 existing_jobs[0].schedule_removal()
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Error removing existing job: {e}")
         
         # Send first result immediately
         await query.edit_message_text(
@@ -166,17 +181,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Execute search immediately (first request)
         try:
             await execute_search(user_id, settings, context.bot)
+            logger.info(f"Immediate search completed for user {user_id}")
         except Exception as e:
             logger.error(f"Error in immediate search: {e}")
         
         # Create recurring job - start after 5 minutes
-        job_queue.run_repeating(
-            send_ads_list,
-            interval=5 * 60,  # 5 minutes in seconds
-            first=5 * 60,  # Start after 5 minutes (not immediately)
-            name=job_name,
-            data={'user_id': user_id}
-        )
+        try:
+            job_queue.run_repeating(
+                send_ads_list,
+                interval=5 * 60,  # 5 minutes in seconds
+                first=5 * 60,  # Start after 5 minutes (not immediately)
+                name=job_name,
+                data={'user_id': user_id}
+            )
+            logger.info(f"Recurring job scheduled: {job_name}, first run in 5 minutes, then every 5 minutes")
+        except Exception as e:
+            logger.error(f"Error scheduling job: {e}")
+            await query.edit_message_text(f"❌ خطا در تنظیم کار تکراری: {str(e)}")
+            return
         
         await query.edit_message_text(
             f"✅ کار تکراری شروع شد!\n\n"
@@ -336,22 +358,32 @@ async def send_ads_list(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     user_id = job.data['user_id']
     
-    if user_id not in user_settings or not user_settings[user_id].get('active'):
+    logger.info(f"Scheduled job running for user {user_id}")
+    
+    if user_id not in user_settings:
+        logger.warning(f"User {user_id} not found in settings")
+        return
+    
+    if not user_settings[user_id].get('active'):
+        logger.info(f"Job for user {user_id} is not active, skipping")
         return
     
     settings = user_settings[user_id]
     
+    logger.info(f"Executing scheduled search for user {user_id}, keyword: {settings.get('keyword')}")
+    
     try:
         await execute_search(user_id, settings, context.bot)
+        logger.info(f"Scheduled search completed successfully for user {user_id}")
     except Exception as e:
-        logger.error(f"Error in scheduled job: {e}")
+        logger.error(f"Error in scheduled job for user {user_id}: {e}")
         try:
             await context.bot.send_message(
                 chat_id=CHANNEL_ID,
                 text=f"❌ خطا در دریافت نتایج: {str(e)}"
             )
-        except:
-            pass
+        except Exception as send_error:
+            logger.error(f"Error sending error message: {send_error}")
 
 async def search_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle keyword search and return first ad result."""
