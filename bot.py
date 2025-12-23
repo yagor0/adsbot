@@ -263,13 +263,17 @@ async def execute_search(user_id, settings, bot):
     
     data = response.json()
     
-    # Find all ad results
+    # Find all ad results (only ads with is_ad == True, remove duplicates)
     ads_found = []
+    seen_app_ids = set()  # Track seen application IDs to avoid duplicates
+    
     if 'result' in data and isinstance(data['result'], list):
         for item in data['result']:
+            # Only process items where is_ad is explicitly True
             if item.get('is_ad') == True:
                 application_id = item.get('application_id')
-                if application_id:
+                if application_id and application_id not in seen_app_ids:
+                    seen_app_ids.add(application_id)
                     app_url = f"https://apps.apple.com/app/id{application_id}"
                     ads_found.append({
                         'url': app_url,
