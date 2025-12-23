@@ -153,15 +153,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
         
-        # Create new recurring job - start immediately (first=0)
-        job_queue.run_repeating(
-            send_ads_list,
-            interval=5 * 60,  # 5 minutes in seconds
-            first=0,  # Start immediately
-            name=job_name,
-            data={'user_id': user_id}
-        )
-        
         # Send first result immediately
         await query.edit_message_text(
             f"✅ کار تکراری شروع شد!\n\n"
@@ -169,14 +160,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🌍 کشور: {settings['country'].upper()}\n"
             f"🗣️ زبان: {settings['language'].upper()}\n"
             f"⏰ هر 5 دقیقه یکبار\n\n"
-            f"در حال جستجو..."
+            f"🔎 در حال جستجو..."
         )
         
-        # Execute search immediately
+        # Execute search immediately (first request)
         try:
             await execute_search(user_id, settings, context.bot)
         except Exception as e:
             logger.error(f"Error in immediate search: {e}")
+        
+        # Create recurring job - start after 5 minutes
+        job_queue.run_repeating(
+            send_ads_list,
+            interval=5 * 60,  # 5 minutes in seconds
+            first=5 * 60,  # Start after 5 minutes (not immediately)
+            name=job_name,
+            data={'user_id': user_id}
+        )
         
         await query.edit_message_text(
             f"✅ کار تکراری شروع شد!\n\n"
@@ -184,7 +184,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🌍 کشور: {settings['country'].upper()}\n"
             f"🗣️ زبان: {settings['language'].upper()}\n"
             f"⏰ هر 5 دقیقه یکبار\n\n"
-            f"✅ اولین جستجو انجام شد!",
+            f"✅ اولین جستجو انجام شد!\n"
+            f"⏳ جستجوی بعدی: 5 دقیقه دیگر",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_menu")]])
         )
         
