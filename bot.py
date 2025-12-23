@@ -58,6 +58,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🗣️ ست کردن زبان", callback_data="set_language")],
     ]
     
+    # Add manual search button
+    if settings.get('keyword'):
+        keyboard.append([InlineKeyboardButton("🔎 جستجوی دستی (الان)", callback_data="manual_search")])
+    
     # Add start/stop button
     if settings['active']:
         keyboard.append([InlineKeyboardButton("⏸️ توقف", callback_data="stop_job")])
@@ -149,14 +153,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
         
-        # Create new recurring job
+        # Create new recurring job - start immediately (first=0)
         job_queue.run_repeating(
             send_ads_list,
             interval=5 * 60,  # 5 minutes in seconds
-            first=10,  # Start after 10 seconds
+            first=0,  # Start immediately
             name=job_name,
             data={'user_id': user_id}
         )
+        
+        # Send first result immediately
+        await query.edit_message_text(
+            f"✅ کار تکراری شروع شد!\n\n"
+            f"🔍 کلمه کلیدی: {settings['keyword']}\n"
+            f"🌍 کشور: {settings['country'].upper()}\n"
+            f"🗣️ زبان: {settings['language'].upper()}\n"
+            f"⏰ هر 5 دقیقه یکبار\n\n"
+            f"در حال جستجو..."
+        )
+        
+        # Execute search immediately
+        try:
+            await execute_search(user_id, settings, context.bot)
+        except Exception as e:
+            logger.error(f"Error in immediate search: {e}")
         
         await query.edit_message_text(
             f"✅ کار تکراری شروع شد!\n\n"
@@ -164,8 +184,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🌍 کشور: {settings['country'].upper()}\n"
             f"🗣️ زبان: {settings['language'].upper()}\n"
             f"⏰ هر 5 دقیقه یکبار\n\n"
-            f"پیام‌ها به چنل ارسال می‌شوند.\n"
-            f"اولین نتیجه بعد از 10 ثانیه ارسال می‌شود.",
+            f"✅ اولین جستجو انجام شد!",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_menu")]])
         )
         
@@ -188,8 +207,102 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_menu")]])
         )
     
+    elif query.data == "manual_search":
+        settings = user_settings.get(user_id, {})
+        
+        if not settings.get('keyword'):
+            await query.edit_message_text(
+                "❌ ابتدا کلمه کلیدی را تنظیم کنید!",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_menu")]])
+            )
+            return
+        
+        await query.edit_message_text("🔎 در حال جستجو...")
+        
+        try:
+            await execute_search(user_id, settings, context.bot)
+            await query.edit_message_text(
+                "✅ جستجو انجام شد و نتایج به چنل ارسال شد!",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_menu")]])
+            )
+        except Exception as e:
+            logger.error(f"Error in manual search: {e}")
+            await query.edit_message_text(
+                f"❌ خطا در جستجو: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_menu")]])
+            )
+    
     elif query.data == "back_to_menu":
         await start(update, context)
+
+async def execute_search(user_id, settings, bot):
+    """Execute search and send results to channel."""
+    keyword = settings.get('keyword')
+    country = settings.get('country', 'de')
+    language = settings.get('language', 'de')
+    chat_id = settings.get('chat_id', CHANNEL_ID)
+    
+    if not keyword:
+        return
+    
+    params = {
+        'keyword': keyword,
+        'language': language,
+        'country': country,
+        'device': 'iphone'
+    }
+    
+    headers = {
+        'X-Apptweak-Key': APP_TWEAK_API_KEY
+    }
+    
+    logger.info(f"Searching: keyword={keyword}, country={country}, language={language}")
+    
+    response = requests.get(APP_TWEAK_BASE_URL, params=params, headers=headers, timeout=30)
+    response.raise_for_status()
+    
+    data = response.json()
+    
+    # Find all ad results
+    ads_found = []
+    if 'result' in data and isinstance(data['result'], list):
+        for item in data['result']:
+            if item.get('is_ad') == True:
+                application_id = item.get('application_id')
+                if application_id:
+                    app_url = f"https://apps.apple.com/app/id{application_id}"
+                    ads_found.append({
+                        'url': app_url,
+                        'app_id': application_id
+                    })
+    
+    # Send results
+    if ads_found:
+        message = f"🔍 نتایج جستجو برای: {keyword}\n"
+        message += f"🌍 کشور: {country.upper()} | 🗣️ زبان: {language.upper()}\n"
+        message += f"📊 تعداد تبلیغات: {len(ads_found)}\n\n"
+        
+        for i, ad in enumerate(ads_found, 1):
+            message += f"{i}. 🔗 {ad['url']}\n"
+        
+        # Split message if too long
+        if len(message) > 4000:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=message[:4000] + "\n\n... (ادامه در پیام بعدی)"
+            )
+            for ad in ads_found[len(ads_found)//2:]:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"🔗 {ad['url']}"
+                )
+        else:
+            await bot.send_message(chat_id=chat_id, text=message)
+    else:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ هیچ تبلیغی برای کلمه کلیدی '{keyword}' پیدا نشد."
+        )
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text input for keyword."""
@@ -222,74 +335,9 @@ async def send_ads_list(context: ContextTypes.DEFAULT_TYPE):
         return
     
     settings = user_settings[user_id]
-    keyword = settings.get('keyword')
-    country = settings.get('country', 'de')
-    language = settings.get('language', 'de')
-    chat_id = settings.get('chat_id', CHANNEL_ID)
-    
-    if not keyword:
-        return
     
     try:
-        params = {
-            'keyword': keyword,
-            'language': language,
-            'country': country,
-            'device': 'iphone'
-        }
-        
-        headers = {
-            'X-Apptweak-Key': APP_TWEAK_API_KEY
-        }
-        
-        logger.info(f"Job running: keyword={keyword}, country={country}, language={language}")
-        
-        response = requests.get(APP_TWEAK_BASE_URL, params=params, headers=headers, timeout=30)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        # Find all ad results
-        ads_found = []
-        if 'result' in data and isinstance(data['result'], list):
-            for item in data['result']:
-                if item.get('is_ad') == True:
-                    application_id = item.get('application_id')
-                    if application_id:
-                        app_url = f"https://apps.apple.com/app/id{application_id}"
-                        ads_found.append({
-                            'url': app_url,
-                            'app_id': application_id
-                        })
-        
-        # Send results
-        if ads_found:
-            message = f"🔍 نتایج جستجو برای: {keyword}\n"
-            message += f"🌍 کشور: {country.upper()} | 🗣️ زبان: {language.upper()}\n"
-            message += f"📊 تعداد تبلیغات: {len(ads_found)}\n\n"
-            
-            for i, ad in enumerate(ads_found, 1):
-                message += f"{i}. 🔗 {ad['url']}\n"
-            
-            # Split message if too long
-            if len(message) > 4000:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=message[:4000] + "\n\n... (ادامه در پیام بعدی)"
-                )
-                for ad in ads_found[len(ads_found)//2:]:
-                    await context.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"🔗 {ad['url']}"
-                    )
-            else:
-                await context.bot.send_message(chat_id=chat_id, text=message)
-        else:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"❌ هیچ تبلیغی برای کلمه کلیدی '{keyword}' پیدا نشد."
-            )
-            
+        await execute_search(user_id, settings, context.bot)
     except Exception as e:
         logger.error(f"Error in scheduled job: {e}")
         try:
